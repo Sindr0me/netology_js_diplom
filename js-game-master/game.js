@@ -169,11 +169,167 @@ class Player extends Actor {
   }
 }
 
-// -------------start game-------------
-const grid = [
-  new Array(3),
-  ['wall', 'wall', 'lava']
-];
-const level = new Level(grid);
-runLevel(level, DOMDisplay);
 
+class LevelParser {
+  constructor(letterDictionary = {}) { //letterDictionary - словарь движущихся объектов игрового поля
+    this.letterDictionary = Object.assign({}, letterDictionary);
+  }
+
+  actorFromSymbol(letter) {//Возвращает конструктор объекта по его символу, используя словарь
+    return this.letterDictionary[letter];
+  }
+
+  obstacleFromSymbol(letter) { // Возвращает строку, соответствующую символу препятствия.
+    if (letter === 'x') {
+      return 'wall'
+    }
+    if (letter === '!') {
+      return 'lava'
+    }
+  }
+
+  createGrid(plan) {// Принимает массив строк и преобразует его в массив массивов
+    return plan.map(line => line.split('')).map(line => line.map(line => this.obstacleFromSymbol(line)));
+  }
+
+  createActors(plan) { //Принимает массив строк и преобразует его в массив движущихся объектов
+    return plan.reduce((rez, itemY, y) => {
+      itemY.split('').forEach((itemX, x) => {
+        const constructor = this.actorFromSymbol(itemX);
+        if (typeof constructor === 'function') {
+          const actor = new constructor(new Vector(x, y));
+          if (actor instanceof Actor) {
+            rez.push(actor);
+          }
+        }
+      });
+      return rez;
+    }, []);
+  }
+
+  parse(plan) {
+    return new Level(this.createGrid(plan), this.createActors(plan));
+  }
+}
+
+class Fireball extends Actor {
+  constructor(pos = new Vector(0, 0), speed = new Vector(0, 0)) {
+    super(pos, new Vector(1, 1), speed);
+  }
+
+  get type() {
+    return 'fireball';
+  }
+
+  getNextPosition(time = 1) {
+    return this.pos.plus(this.speed.times(time));
+  }
+
+  handleObstacle() {
+    this.speed = this.speed.times(-1);
+  }
+
+  act(time, level) {
+    const nextPos = this.getNextPosition(time);
+    if (level.obstacleAt(nextPos, this.size)) {
+      this.handleObstacle();
+    } else {
+      this.pos = nextPos
+    }
+  }
+}
+
+class HorizontalFireball extends Fireball {
+  constructor(pos = new Vector(0, 0)) {
+    super(pos, new Vector(2, 0));
+  }
+}
+
+class VerticalFireball extends Fireball {
+  constructor(pos = new Vector(0, 0)) {
+    super(pos, new Vector(0, 2));
+  }
+}
+
+class FireRain extends Fireball {
+  constructor(pos = new Vector(0, 0)) {
+    super(pos, new Vector(0, 3));
+    this.startPos = this.pos;
+  }
+
+  handleObstacle() {
+    this.pos = this.startPos;
+  }
+}
+
+class Coin extends Actor {
+  constructor(pos = new Vector(0, 0)) {
+    super(pos.plus(new Vector(0.2, 0.1)), new Vector(0.6, 0.6));
+    this.spring = Math.random() * (Math.PI * 2);
+    this.springSpeed = 8;
+    this.springDist = 0.07;
+    this.startPos = this.pos;
+  }
+
+  get type() {
+    return 'coin';
+  }
+
+  updateSpring(time = 1) {
+    this.spring += this.springSpeed * time;
+  }
+
+  getSpringVector() {
+    return new Vector(0, Math.sin(this.spring) * this.springDist)
+  }
+
+  getNextPosition(time = 1) {
+    this.updateSpring(time);
+    return this.startPos.plus(this.getSpringVector());
+  }
+
+  act(time) {
+    this.pos = this.getNextPosition(time);
+  }
+}
+
+
+loadLevels()
+  .then((res) => {
+    runGame(JSON.parse(res), parser, DOMDisplay)
+      .then(() => alert('Вы выиграли!'))
+  });
+
+const schemas = [
+  [
+    '         ',
+    '         ',
+    '    =    ',
+    '       o ',
+    '     !xxx',
+    ' @       ',
+    'xxx!     ',
+    '         '
+  ],
+  [
+    '      v  ',
+    '    v    ',
+    '  v      ',
+    '        o',
+    '        x',
+    '@   x    ',
+    'x        ',
+    '         '
+  ]
+];
+const actorDict = {
+  '@': Player,
+  'v': FireRain,
+  'o': Coin,
+  '=': HorizontalFireball,
+  '|': VerticalFireball
+
+};
+const parser = new LevelParser(actorDict);
+runGame(schemas, parser, DOMDisplay)
+  .then(() => console.log('Вы выиграли приз!'));
